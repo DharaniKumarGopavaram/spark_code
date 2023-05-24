@@ -1,0 +1,420 @@
+Spark Evolution in short :-
+---------------------------
+--  Google papers on GFS(Google File System), BigTable and MapReduce.
+--  Yahoo developed HDFS(Hadoop Distributed File System), MapReduce based on Google papers.
+--  MapReduce API was verbose and had few short comings like writing the intermediate results to
+    disk. This repeated I/O took its toll; large MR jobs could run for hours or even days.
+--  Also MapReduce fell short of different workloads like machine learning, streaming or
+    interactive sql-like queries.
+
+What is Apache Spark?
+---------------------
+--  Apache Spark is a unified engine designed for large-scale distributed data processing, on
+    premises in data centers or in cloud
+--  Spark provides in-memory storage for intermediate computations, making it much faster than
+    Hadoop MapReduce. It incorporates libraries with composable APIs for machine learning
+    (MLlib), SQL for interactive queries (Spark SQL), stream processing (Structured Streaming)
+    for interacting with real-time data, and graph processing (GraphX).
+
+Apache Spark's distributed execution :-
+---------------------------------------
+-- At a high level in the spark architecture, a spark application consists of a driver program
+   that is responsible for orchestrating parallel operations on the Spark cluster. The driver
+   access the distributed components in the cluster(the spark executor and cluster manager)
+   through a SparkSession
+
+Spark's architecture consists of below components.
+1. SparkDriver
+2. SparkSession
+3. ClusterManager
+4. SparkExecutor
+
+Spark Driver :-
+---------------
+--  As part of the spark application responsible for instantiating a SparkSession, the SparkDriver
+    has multiple roles ; the communicates with the cluster manager ; it requests resource
+    (CPU, memory etc.,) from the cluster manager for Spark Executors(JVMs); and it transforms
+    all the spark operations into DAG computations, schedules them, and distributes their execution
+    as tasks across the spark executors. Once resources are allocated, it communicates directly
+    with the executors.
+
+SparkSession:-
+--------------
+--  In Spark 2.0, the SparkSession became a unified conduit to all Spark operations and data.
+    Not only did it subsume previous entry points to spark like the SparkContext, SQLContext,
+    HiveContext, SparkConf and StreamingContext, but it also made working with spark simpler
+    and easier
+--  Through this one conduit, you can create JVM runtime parameters, define DataFrames and
+    Datasets, read from data sources, access catalog metadata, and issue Spark SQL queries.
+    SparkSession provides a single unified entry point to all of Spark’s functionality.
+--  In a standalone Spark application, you can create a SparkSession using one of the high-level
+    APIs in the programming language of your choice. In the Spark shell the SparkSession is
+    created for you, and you can access it via a global variable called spark.
+
+ClusterManager:-
+----------------
+--  The cluster manager is responsible for managing and allocating resources for the cluster of
+    nodes on which your Spark application runs. Currently, Spark supports four cluster managers:
+    the built-in standalone cluster manager, Apache Hadoop YARN, Apache Mesos, and Kubernetes.
+
+SparkExecutor:-
+---------------
+--  A Spark executor runs on each worker node in the cluster. The executors communicate with the
+    driver program and are responsible for executing tasks on the workers. In most deployments
+    modes, only a single executor runs per node
+
+SparkDeploymentModes:-
+----------------------
+
+Mode	           Spark driver	                                Spark executor	                            Cluster manager
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Local	           Runs on a single JVM, like a laptop          Runs on the same JVM as the driver	        Runs on the same host
+                   or single node
+Standalone	       Can run on any node in the cluster	        Each node in the cluster will launch        Can be allocated arbitrarily to any host in the cluster
+                                                                its own executor JVM
+YARN (client)	   Runs on a client, not part of the cluster	YARN’s NodeManager’s container	            YARN’s Resource Manager works with YARN’s Application Master to allocate the containers on NodeManagers for executors
+YARN (cluster)	   Runs with the YARN Application Master	    Same as YARN client mode	                Same as YARN client mode
+Kubernetes	       Runs in a Kubernetes pod	                    Each worker runs within its own pod         Kubernetes Master
+
+Distributed data and partitions:-
+---------------------------------
+--  Actual physical data is distributed across storage as partitions residing in either HDFS or
+    cloud storage. While the data is distributed as partitions across the physical cluster,
+    Spark treats each partition as a high-level logical data abstraction—as a DataFrame in
+    memory. Though this is not always possible, each Spark executor is preferably allocated a
+    task that requires it to read the partition closest to it in the network, observing data
+    locality.
+--  Partitioning allows for efficient parallelism. A distributed scheme of breaking up data into
+    chunks or partitions allows Spark executors to process only data that is close to them,
+    minimizing network bandwidth
+
+Spark Application Concepts :-
+-----------------------------
+
+Application :- A user program built on Spark using its APIs. It consists of a driver program
+               and executors on the cluster
+SparkSession :- An object that provides a point of entry to interact with underlying spark
+                functionality and allows programming Spark with its APIs.
+Job :- A parallel computation consisting of multiple tasks that get spawned in response to a
+       spark action.
+Stage :- Each job gets divided into smaller set of tasks called stages that depend on each other
+Task :- A single unit of work of execution that will be sent to a Spark executor.
+
+Transformations, Actions and Lazy evaluation :-
+-----------------------------------------------
+
+--  Spark operations on distributed data can be classified into two types: transformations and actions.
+    Transformations, as the name suggests, transform a Spark DataFrame into a new DataFrame
+    without altering the original data, giving it the property of immutability.
+    Put another way, an operation such as select() or filter() will not change the original
+    DataFrame; instead, it will return the transformed results of the operation as a new
+    DataFrame.
+--  All transformations are evaluated lazily.
+    That is, their results are not computed immediately, but they are recorded or remembered
+    as a lineage. A recorded lineage allows Spark, at a later time in its execution plan,
+    to rearrange certain transformations, coalesce them, or optimize transformations into
+    stages for more efficient execution.
+--  Lazy evaluation is Spark’s strategy for delaying execution until an action is invoked or
+    data is “touched” (read from or written to disk).
+--  An action triggers the lazy evaluation of all the recorded transformations.
+--  While lazy evaluation allows Spark to optimize your queries by peeking into your chained
+    transformations, lineage and data immutability provide fault tolerance.
+    Because Spark records each transformation in its lineage and the DataFrames are immutable
+    between transformations, it can reproduce its original state by simply replaying the
+    recorded lineage, giving it resiliency in the event of failures.
+
+Some examples of transformations :- orderBy(), groupBy(), filter(), select(), join()
+Some examples of actions :- show(), take(), count(), collect(), save()
+
+Narrow and Wide Transformations :-
+----------------------------------
+
+--  As noted, transformations are operations that Spark evaluates lazily.
+    A huge advantage of the lazy evaluation scheme is that Spark can inspect your computational
+    query and ascertain how it can optimize it. This optimization can be done by either joining
+    or pipelining some operations and assigning them to a stage, or breaking them into stages
+    by determining which operations require a shuffle or exchange of data across clusters.
+--  Transformations can be classified as having either narrow dependencies or wide dependencies.
+    Any transformation where a single output partition can be computed from a single input
+    partition is a narrow transformation.
+    For example, filter() and contains() represent narrow transformations because they can
+    operate on a single partition and produce the resulting output partition without any
+    exchange of data.
+--  However, transformations such as groupBy() or orderBy() instruct Spark to perform wide
+    transformations, where data from other partitions is read in, combined, and written to disk.
+
+Spark UI :-
+-----------
+Spark includes a graphical user interface that you can use to inspect or monitor Spark
+applications in their various stages of decomposition—that is jobs, stages, and tasks.
+Depending on how Spark is deployed, the driver launches a web UI, running by default on port
+4040, where you can view metrics and details such as:
+
+    1.  A list of scheduler stages and tasks
+    2.  A summary of RDD sizes and memory usage
+    3.  Information about the environment
+    4.  Information about the running executors
+    5.  All the Spark SQL queries
+
+In local mode, you can access this interface at http://<localhost>:4040 in a web browser.
+
+Structuring Spark :-
+--------------------
+
+--  Spark 2.x introduced a few key schemes for structuring Spark.
+    One is to express computations by using common patterns found in data analysis.
+    These patterns are expressed as high-level operations such as filtering, selecting,
+    counting, aggregating, averaging, and grouping.
+    This provides added clarity and simplicity.
+
+Spark's Basic data types :-
+---------------------------
+
+--  Matching its supported programming languages, Spark supports basic internal data types.
+    These data types can be declared in your Spark application or defined in your schema.
+    For example, in Scala, you can define or declare a particular column name to be of type
+    String, Byte, Long, or Map, etc.
+    Here, we define variable names tied to a Spark data type
+
+Schemas and Creating DataFrames :-
+----------------------------------
+--  A schema in Spark defines the column names and associated data types for a DataFrame.
+    Most often, schemas come into play when you are reading structured data from an external
+    data source.
+--  Defining a schema up front as opposed to taking a schema-on-read approach offers three benefits:
+    1.  You relieve Spark from the onus of inferring data types.
+    2.  You prevent Spark from creating a separate job just to read a large portion of your file
+        to ascertain the schema, which for a large data file can be expensive and time-consuming.
+    3.  You can detect errors early if data doesn't match the schema.
+
+Spark SQL and underlying engine :-
+----------------------------------
+--  At the core of the Spark SQL engine are the Catalyst optimizer and Project Tungsten.
+    Together, these support the high-level DataFrame and Dataset APIs and SQL queries.
+    Let's take a closer look at catalyst optimiser.
+--  The Catalyst optimizer takes a computational query and converts it into an execution plan.
+    It goes through four transformational phases
+
+    1. Analysis
+    2. Logical optimisation
+    3. Physical Planning
+    4. Code generation
+
+Viewing the metadata :-
+-----------------------
+--  Spark manages the metadata associated with each managed or unmanaged table.
+    This is captured in the Catalog, a high-level abstraction in Spark SQL for storing metadata
+    Some examples of getting metadata :-
+
+    scala> spark.catalog.listDatabases().columns
+    res0: Array[String] = Array(name, description, locationUri)
+
+    scala> spark.catalog.listDatabases().select("name").show(30,false)
+    +---------------------------------------------------------------------------------------------+
+    |name                                                                                         |
+    +---------------------------------------------------------------------------------------------+
+    |aci                                                                                          |
+    |aclancy                                                                                      |
+    |ai_pub                                                                                       |
+    |akaya                                                                                        |
+    |amin                                                                                         |
+    |az                                                                                           |
+    |bbodicherla                                                                                  |
+    |bpr                                                                                          |
+    |brent                                                                                        |
+    |cdm                                                                                          |
+    |cloudera_manager_metastore_canary_test_db_hive_hivemetastore_05eb23e3c670025a66c1b19941255d25|
+    |cloudera_manager_metastore_canary_test_db_hive_hivemetastore_1a13d114ba5b44c0b8a6e81bec456e1f|
+    |cloudera_manager_metastore_canary_test_db_hive_hivemetastore_340e37759242c619fcea186bb026806c|
+    |cloudera_manager_metastore_canary_test_db_hive_hivemetastore_a5f06f8700bdc79674f94485f419f91a|
+    |cloudera_manager_metastore_canary_test_db_hive_hivemetastore_b24e337d96140200814090b29eb29786|
+    |compaction                                                                                   |
+    |csd                                                                                          |
+    |cuppa                                                                                        |
+    |default                                                                                      |
+    |dmart                                                                                        |
+    |dq_as                                                                                        |
+    |dq_mo                                                                                        |
+    |dq_prod                                                                                      |
+    |dq_prod_test                                                                                 |
+    |dq_test                                                                                      |
+    |em                                                                                           |
+    |emaynard                                                                                     |
+    |ffp                                                                                          |
+    |il_product                                                                                   |
+    |il_pub                                                                                       |
+    +---------------------------------------------------------------------------------------------+
+    only showing top 30 rows
+
+    scala> spark.catalog.listTables("sds").columns
+    res4: Array[String] = Array(name, database, description, tableType, isTemporary)
+
+    spark.catalog.listTables("sds").select("name","tableType").show(40,false)
+    +----------------------------------+---------+
+    |name                              |tableType|
+    +----------------------------------+---------+
+    |acorn                             |EXTERNAL |
+    |acorn_90d_orc                     |EXTERNAL |
+    |acorn_compaction_test             |EXTERNAL |
+    |acorn_corrupt                     |EXTERNAL |
+    |acorn_corrupt_full                |EXTERNAL |
+    |acorn_corrupt_lane1               |EXTERNAL |
+    |acorn_corrupt_lane3               |EXTERNAL |
+    |acorn_corrupt_new                 |EXTERNAL |
+    |acorn_endgame                     |EXTERNAL |
+    |acorn_kafka_test                  |EXTERNAL |
+    |acorn_spark                       |MANAGED  |
+    |acorn_stage                       |EXTERNAL |
+    |acorn_stage_fat_280k              |EXTERNAL |
+    |acorn_stage_fat_280k_2            |EXTERNAL |
+    |acorn_stage_fat_280k_3            |EXTERNAL |
+    |acorn_stage_fat_280k_4            |EXTERNAL |
+    |acorn_stage_fat_280k_5            |EXTERNAL |
+    |acorn_stage_late                  |EXTERNAL |
+    |acorn_stage_solacetest            |EXTERNAL |
+    |acorn_stage_test                  |EXTERNAL |
+    |acorn_test                        |EXTERNAL |
+    |acorn_yogesh                      |EXTERNAL |
+    |am_oa_results_summary_all_lines   |MANAGED  |
+    |archive_tree                      |EXTERNAL |
+    |beyond_economic_repair            |EXTERNAL |
+    |blob_metadata_new                 |EXTERNAL |
+    |bulk_units                        |EXTERNAL |
+    |compaction_inprocess              |EXTERNAL |
+    |compaction_test                   |EXTERNAL |
+    |compliance_pdata                  |EXTERNAL |
+    |compliance_pdata_export           |EXTERNAL |
+    |compliance_pdata_export_2         |EXTERNAL |
+    |compliance_pdata_metadata         |EXTERNAL |
+    |component_universe_datalatency_dp2|MANAGED  |
+    |core_attribute                    |EXTERNAL |
+    |core_attribute_spark              |EXTERNAL |
+    |core_attribute_unified            |EXTERNAL |
+    |core_attribute_unified_backfill   |EXTERNAL |
+    |core_attribute_unified_test       |EXTERNAL |
+    |core_ber                          |EXTERNAL |
+    +----------------------------------+---------+
+    only showing top 40 rows
+
+    scala> spark.catalog.listColumns("sds.core_attribute").columns
+    res6: Array[String] = Array(name, description, dataType, nullable, isPartition, isBucket)
+
+    scala> spark.catalog.listColumns("sds.core_attribute").select("name","dataType","isPartition")
+    res7: org.apache.spark.sql.DataFrame = [name: string, dataType: string ... 1 more field]
+
+    scala> spark.catalog.listColumns("sds.core_attribute").select("name","dataType","isPartition").show(100,false)
+    +------------------------+--------+-----------+
+    |name                    |dataType|isPartition|
+    +------------------------+--------+-----------+
+    |serial_number           |string  |false      |
+    |attribute_key           |string  |false      |
+    |attribute_value         |string  |false      |
+    |uut_start               |string  |false      |
+    |uut_stop                |string  |false      |
+    |station_id              |string  |false      |
+    |original_station_id     |string  |false      |
+    |line_name               |string  |false      |
+    |station_type            |string  |false      |
+    |ingest_timestamp        |string  |false      |
+    |received_date           |string  |false      |
+    |ingest_date             |string  |false      |
+    |test_case_key           |string  |false      |
+    |source_type             |string  |false      |
+    |config_code             |string  |false      |
+    |inserted_timestamp      |string  |false      |
+    |origin                  |string  |false      |
+    |record_id               |string  |false      |
+    |manufacturing_year_week |string  |false      |
+    |product_code            |string  |false      |
+    |uut_start_original      |string  |false      |
+    |uut_stop_original       |string  |false      |
+    |effective_test_date     |string  |false      |
+    |effective_test_timestamp|string  |false      |
+    |site_name               |string  |true       |
+    |attribute_month         |string  |true       |
+    +------------------------+--------+-----------+
+
+
+    scala> spark.catalog.listColumns("sds.core_attribute").select("name","dataType","isPartition").filter(col("isPartition")).show(false)
+    +---------------+--------+-----------+
+    |name           |dataType|isPartition|
+    +---------------+--------+-----------+
+    |site_name      |string  |true       |
+    |attribute_month|string  |true       |
+    +---------------+--------+-----------+
+
+Data Sources for dataframes and SQL tables :-
+---------------------------------------------
+--  DataFrameReader is the core construct for reading data from a data source into a DataFrame.
+    It has a defined format and a recommended pattern for usage:
+
+    DataFrameReader.format(args).option("key", "value").schema(args).load()
+
+    Note that you can only access a DataFrameReader through a SparkSession instance.
+    That is, you cannot create an instance of DataFrameReader.
+
+    To get an instance handle to it, use:
+        SparkSession.read or SparkSession.readStream
+
+    While read returns a handle to DataFrameReader to read into a DataFrame from a static data source,
+    readStream returns an instance to read from a streaming source.
+
+--  DataFrameReader methods, arguments and options
+
+    Method         Arguments                     Description
+    ---------------------------------------------------------------------------------------
+    format()       "parquet", "csv", "txt",      If you don't specify this method
+                   "json", "jdbc", "orc",        then the default is Parquet or whatever
+                   "avro" etc.,                  is set in spark.sql.sources.default
+
+    option()       ("mode", {PERMISSIVE |        A series of key/value pairs and options.
+                   FAILFAST | DROPMALFORMED})    The Spark documentation shows some examples
+                   ("inferSchema", {true |       and explains the different modes and their actions.
+                   false})                       The default mode is PERMISSIVE. The "inferSchema" and
+                   ("path", "path_file_          "mode" options are specific to the JSON and CSV file formats.
+                   data_source")
+
+    schema()        DDL String or Struct Type    For JSON or CSV format, you can specify to infer the schema
+                                                 in the option() method. Generally, providing a schema for
+                                                 any format makes loading faster and ensures your data
+                                                 conforms to the expected schema.
+
+    load()          "/path/to/data/source"       The path to the data source.
+                                                 This can be empty if specified in option("path", "...")
+
+--  In general, no schema is needed when reading from a static Parquet data source—the Parquet metadata
+    usually contains the schema, so it’s inferred. However, for streaming data sources you will have to
+    provide a schema.
+--  Parquet is the default and preferred data source for Spark because it’s efficient,
+    uses columnar storage, and employs a fast compression algorithm.
+
+DataFrameWriter :-
+------------------
+--  DataFrameWriter does the reverse of its counterpart: it saves or writes data to a specified built-in
+    data source. Unlike with DataFrameReader, you access its instance not from a SparkSession but from the
+    DataFrame you wish to save. It has a few recommended usage patterns:
+
+    DataFrameWriter.format(args)
+      .option(args)
+      .bucketBy(args)
+      .partitionBy(args)
+      .save(path)
+
+    DataFrameWriter.format(args).option(args).sortBy(args).saveAsTable(table)
+
+    Method	        Arguments	                                    Description
+    -------------------------------------------------------------------------------------------------------------------------------
+    format()	    "parquet", "csv", "txt", "json",                If you don’t specify this method, then the default is Parquet or whatever is set in spark.sql.sources.default.
+                    "jdbc", "orc", "avro", etc.
+    option()	    ("mode", {append | overwrite |                  A series of key/value pairs and options. The Spark documentation shows some examples.
+                    ignore | error or errorifexists} )              This is an overloaded method. The default mode options are error or errorifexists and SaveMode.ErrorIfExists; they throw an exception at runtime if the data already exists.
+                    ("mode", {SaveMode.Overwrite |
+                    SaveMode.Append, SaveMode.Ignore,
+                    SaveMode.ErrorIfExists})
+                    ("path", "path_to_write_to")
+    bucketBy()	    (numBuckets, col, col..., coln)	                The number of buckets and names of columns to bucket by. Uses Hive’s bucketing scheme on a filesystem.
+    save()	        "/path/to/data/source"	                        The path to save to. This can be empty if specified in option("path", "...").
+    saveAsTable()	"table_name"	                                The table to save to.
+
+
+
